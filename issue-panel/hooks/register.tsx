@@ -11,7 +11,8 @@ const issue = atom({ plugin: 'issue-panel', key: 'issue' } as const, null)
 const dev = atom({ plugin: 'issue-panel', key: 'dev' } as const, null)
 const note = atom({ plugin: 'issue-panel', key: 'note' } as const, '')
 const FIELDS = ['summary', 'issuetype', 'status', 'priority', 'fixVersions', 'description', 'comment', 'parent', 'issuelinks', 'customfield_10020']
-const NEED_MCP = 'You need to connect the Atlassian MCP first (run /mcp, pick the issue-panel Atlassian server and authenticate).'
+const needMcp = (reason: string) =>
+  `You need to connect the Atlassian MCP first: this plugin's own server (plugin:issue-panel:atlassian) is not connected (${reason}). Run /mcp, select it and authenticate.`
 let server: string | undefined // this plugin's own Atlassian MCP (manifest key "atlassian")
 let cloudId: string | undefined
 
@@ -25,7 +26,7 @@ async function callText($: Api, tool: string, args: object) {
 async function connect($: Api) {
   if (server && cloudId) return
   const c = await $.mcp.connect('atlassian')
-  if (!c.isConnected) throw new Error(c.reason)
+  if (!c.isConnected) throw new Error(`mcp:${c.reason}`)
   server = c.server
   cloudId = JSON.parse(await callText($, 'getAccessibleAtlassianResources', {}))[0].id
 }
@@ -49,8 +50,9 @@ async function show($: Api, key: string) {
       // dev info is optional: leave the section empty
     }
   } catch (err) {
+    const m = (err as Error).message
     await update($, issue, () => null)
-    await update($, note, () => NEED_MCP)
+    await update($, note, () => (m.startsWith('mcp:') ? needMcp(m.slice(4)) : `Could not load ${key}: ${m}`))
   }
 }
 
