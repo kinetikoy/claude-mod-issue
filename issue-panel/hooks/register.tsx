@@ -11,9 +11,8 @@ const issue = atom({ plugin: 'issue-panel', key: 'issue' } as const, null)
 const dev = atom({ plugin: 'issue-panel', key: 'dev' } as const, null)
 const note = atom({ plugin: 'issue-panel', key: 'note' } as const, '')
 const FIELDS = ['summary', 'issuetype', 'status', 'priority', 'fixVersions', 'description', 'comment', 'parent', 'issuelinks', 'customfield_10020']
-const NEED_MCP = 'You need to connect the Atlassian MCP first (run /mcp and authenticate Atlassian).'
-const SERVERS = ['plugin:restoflow:atlassian', 'plugin_restoflow_atlassian', 'atlassian'] // tried in order
-let server: string | undefined // first one that answered, or the one seen in a tool call
+const NEED_MCP = 'You need to connect the Atlassian MCP first (run /mcp, pick the issue-panel Atlassian server and authenticate).'
+let server: string | undefined // this plugin's own Atlassian MCP (manifest key "atlassian")
 let cloudId: string | undefined
 
 async function callText($: Api, tool: string, args: object) {
@@ -25,16 +24,10 @@ async function callText($: Api, tool: string, args: object) {
 
 async function connect($: Api) {
   if (server && cloudId) return
-  for (const s of server ? [server] : SERVERS) {
-    try {
-      server = s
-      cloudId = JSON.parse(await callText($, 'getAccessibleAtlassianResources', {}))[0].id
-      return
-    } catch {
-      server = undefined
-    }
-  }
-  throw new Error('no atlassian')
+  const c = await $.mcp.connect('atlassian')
+  if (!c.isConnected) throw new Error(c.reason)
+  server = c.server
+  cloudId = JSON.parse(await callText($, 'getAccessibleAtlassianResources', {}))[0].id
 }
 
 async function show($: Api, key: string) {

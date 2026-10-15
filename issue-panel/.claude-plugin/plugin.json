@@ -1,1 +1,12 @@
-{ "name": "issue-panel", "version": "0.1.0", "description": "Side panel showing the Jira issue you are working on", "types": "./types/index.d.ts" }
+{
+  "name": "issue-panel",
+  "version": "0.1.0",
+  "description": "Side panel showing the Jira issue you are working on",
+  "types": "./types/index.d.ts",
+  "mcpServers": {
+    "atlassian": {
+      "type": "http",
+      "url": "https://mcp.atlassian.com/v1/mcp/authv2"
+    }
+  }
+}
