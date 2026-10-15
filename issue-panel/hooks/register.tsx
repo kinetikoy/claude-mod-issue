@@ -81,19 +81,13 @@ const rule = (Box: any, Text: any) => (
 )
 
 export const register: Register = on => {
-  on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'issue', description: 'Show a Jira issue in the panel: /issue KEY-123' })
-    return next(e)
-  })
-
-  on('command.run', { command: 'issue' }, async ($, e) => {
-    const key = keyIn(String((e as any).args ?? ''))
-    if (!key) return { text: 'Usage: /issue KEY-123' }
-    void show($, key)
-    return { text: `Opening ${key}` }
-  })
-
   on('prompt.submit', async ($, e, next) => {
+    // /issue is a plugin command file (commands/issue.md), so it lists in every host
+    const slashKey = e.command?.name.split(':').pop() === 'issue' ? keyIn(e.command.args) : undefined
+    if (slashKey) {
+      void show($, slashKey)
+      return next(e)
+    }
     if (HIDE.test(e.text)) {
       await hide($)
       return next(e)
