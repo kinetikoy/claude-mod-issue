@@ -1,0 +1,34 @@
+import { test, expect } from 'claude-code/testing'
+import { parseDev, parseIssue, parseShow, keyOfToolCall, dependantOf } from './jira'
+
+test('parseShow', () => {
+  expect(parseShow('show issue AB-12')).toEqual({ key: 'AB-12' })
+  expect(parseShow('show me the parent issue')).toEqual({ rel: 'parent' })
+  expect(parseShow('show the dependant issue')).toEqual({ rel: 'dependant' })
+  expect(parseShow('we should work on https://x.atlassian.net/browse/BG-1447...')).toEqual({ key: 'BG-1447' })
+  expect(parseShow('show issue bg-1600')).toEqual({ key: 'BG-1600' })
+  expect(parseShow('fix AB-12')).toBeNull()
+})
+test('keyOfToolCall', () => {
+  expect(keyOfToolCall({ tool: 'Bash', command: 'git worktree add .worktrees/AB-7-x' })).toBe('AB-7')
+  expect(keyOfToolCall({ tool: 'Bash', command: 'ls AB-7' })).toBeUndefined()
+  expect(keyOfToolCall({ tool: 'mcp__plugin_restoflow_atlassian__getJiraIssue', issueIdOrKey: 'XY-9' })).toBe('XY-9')
+})
+test('dependantOf', () => {
+  expect(dependantOf({ links: [{ kind: 'relates to', key: 'A-1' }, { kind: 'is blocked by', key: 'A-2' }] } as any)).toBe('A-2')
+})
+test('parseIssue unwraps the MCP envelope', () => {
+  const raw = JSON.stringify({ issues: { nodes: [{ key: 'BG-1', fields: { summary: 'S', issuetype: { name: 'Bug' }, status: { name: 'In Progress' }, customfield_10020: [{ name: 'Sprint 1' }], comment: { comments: [{ author: { displayName: 'A' }, created: '2026-10-15T11:10', body: 'hi' }] } } }] } })
+  const i = parseIssue(raw)
+  expect([i.key, i.type, i.sprint, i.comments[0].body]).toEqual(['BG-1', 'Bug', 'Sprint 1', 'hi'])
+  expect(parseIssue(JSON.stringify({ key: 'A-2', fields: { parent: { key: 'A-1', fields: { summary: 'Epic' } } } })).parentTitle).toBe('Epic')
+})
+test('parseDev groups PRs and builds', () => {
+  const raw = JSON.stringify({ data: { data: { relationships: [
+    { relationshipName: 'x-has-pull-request', targetObjectType: 'ExternalPullRequest', targets: [{ title: 'Fix login', status: 'MERGED', url: 'u' }] },
+    { relationshipName: 'jira-work-item-links-external-build', targetObjectType: 'ExternalBuild', targets: [{ name: 'ci #4', state: 'FAILED' }] },
+    { relationshipName: 'atlassian_user_assigned_jira_work_item', targetObjectType: 'AtlassianUser', targets: [{}] },
+  ] } } })
+  const { items } = parseDev(raw)
+  expect(items.map(i => `${i.kind}|${i.label}|${i.status}`)).toEqual(['Pull requests|Fix login|MERGED', 'Builds|ci #4|FAILED'])
+})

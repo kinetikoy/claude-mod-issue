@@ -1,0 +1,1 @@
+{ "name": "issue-panel", "version": "0.1.0", "description": "Side panel showing the Jira issue you are working on", "types": "./types/index.d.ts" }
