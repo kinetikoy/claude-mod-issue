@@ -8,7 +8,6 @@ import { DEV_ORDER, HIDE, devColor, keyIn, parseDev, dependantOf, icon, priority
 type Api = EngineInterface
 const PANE = 'jira-issue'
 const issue = atom({ plugin: 'issue-panel', key: 'issue' } as const, null)
-const logs = atom({ plugin: 'issue-panel', key: 'logs' } as const, [] as string[])
 const dev = atom({ plugin: 'issue-panel', key: 'dev' } as const, null)
 const note = atom({ plugin: 'issue-panel', key: 'note' } as const, '')
 const FIELDS = ['summary', 'issuetype', 'status', 'priority', 'fixVersions', 'description', 'comment', 'parent', 'issuelinks', 'customfield_10020']
@@ -17,22 +16,11 @@ const SERVERS = ['plugin:restoflow:atlassian', 'plugin_restoflow_atlassian', 'at
 let server: string | undefined // first one that answered, or the one seen in a tool call
 let cloudId: string | undefined
 
-async function log($: Api, msg: string) {
-  await update($, logs, l => [...l, msg].slice(-30))
-}
-
 async function callText($: Api, tool: string, args: object) {
-  await log($, `mcp.call ${server} ${tool}`)
-  try {
-    const r = await $.mcp.call(server!, tool, args)
-    const t = r.content.map((b: any) => b.text ?? '').join('')
-    await log($, `  -> ${r.isError ? 'ERROR ' : ''}${t.length} chars: ${t.slice(0, 120).replace(/\s+/g, ' ')}`)
-    if (r.isError) throw new Error(t.slice(0, 200))
-    return t
-  } catch (err) {
-    await log($, `  !! ${(err as Error).message.slice(0, 160)}`)
-    throw err
-  }
+  const r = await $.mcp.call(server!, tool, args)
+  const t = r.content.map((b: any) => b.text ?? '').join('')
+  if (r.isError) throw new Error(t.slice(0, 200))
+  return t
 }
 
 async function connect($: Api) {
@@ -52,26 +40,22 @@ async function connect($: Api) {
 async function show($: Api, key: string) {
   const title = `Jira ${key}`
   const opened = await $.ui.open({ id: PANE, title })
-  await log($, `show ${key}: pane ${opened.isPlaced ? 'placed' : 'NOT placed: ' + opened.reason}`)
   if (!opened.isPlaced) $.ui.toast(`Jira panel not shown: ${opened.reason}. Try /issue ${key}`)
   await update($, note, () => `Loading ${key}…`)
   try {
     await connect($)
     const raw = await callText($, 'getJiraIssue', { cloudId, issueIdOrKey: key, fields: FIELDS })
     const parsed = parseIssue(raw)
-    await log($, `parsed: ${parsed.key} | ${parsed.title} | ${parsed.status} | ${parsed.comments.length} comments`)
     await update($, issue, () => parsed)
     await update($, note, () => '')
     await update($, dev, () => null)
     try {
       const d = parseDev(await callText($, 'getTeamworkGraphContext', { cloudId, objectType: 'JiraWorkItem', objectIdentifier: key, detailLevel: 'full', first: 50 }))
-      await log($, `dev: ${d.items.length} items; fields seen: ${d.unknown.join(' | ') || '-'}`)
       await update($, dev, () => d.items)
     } catch {
-      await log($, 'dev info unavailable')
+      // dev info is optional: leave the section empty
     }
   } catch (err) {
-    await log($, `show failed: ${(err as Error).message.slice(0, 160)}`)
     await update($, issue, () => null)
     await update($, note, () => NEED_MCP)
   }
@@ -110,7 +94,6 @@ export const register: Register = on => {
   on('command.run', { command: 'issue' }, async ($, e) => {
     const key = keyIn(String((e as any).args ?? ''))
     if (!key) return { text: 'Usage: /issue KEY-123' }
-    await log($, `/issue ${key}`)
     void show($, key)
     return { text: `Opening ${key}` }
   })
@@ -121,13 +104,11 @@ export const register: Register = on => {
       return next(e)
     }
     const ask = parseShow(e.text)
-    if (ask) await log($, `prompt trigger: ${JSON.stringify(ask)}`)
     if (!ask) return next(e)
     if ('key' in ask) void show($, ask.key)
     else {
       const cur = await read($, issue)
       const key = cur && (ask.rel === 'parent' ? cur.parent : dependantOf(cur))
-      await log($, `${ask.rel} of ${cur?.key ?? '(no issue on screen)'} -> ${key ?? 'none'}`)
       if (key) void show($, key)
       else await update($, note, () => `No ${ask.rel} issue for ${cur?.key ?? 'current issue'}`)
     }
@@ -135,12 +116,8 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
-    
     const key = keyOfToolCall(e as any)
-    if (key) {
-      await log($, `tool.call ${e.tool} -> ${key}`)
-      void show($, key)
-    }
+    if (key) void show($, key)
     return next(e)
   })
 
@@ -148,7 +125,6 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const i = await read($, issue)
     const msg = await read($, note)
-    const lines = await read($, logs)
     const devItems = await read($, dev)
 
     let main
@@ -205,18 +181,12 @@ export const register: Register = on => {
       )
     } catch (err) {
       const text = `render failed: ${(err as Error).message.slice(0, 160)}`
-      if (lines[lines.length - 1] !== text) void log($, text) // deduped: no redraw loop
       main = <Text color="red">{text}</Text>
     }
 
     return (
       <Box flexDirection="column" height="100%" backgroundColor={BG}>
         {main}
-        <Text bold dimColor>{'\n── debug ──'}</Text>
-        {lines.length === 0 && <Text dimColor>(no events yet)</Text>}
-        {lines.map(l => (
-          <Text dimColor>{l}</Text>
-        ))}
       </Box>
     )
   })
