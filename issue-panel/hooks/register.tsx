@@ -11,9 +11,12 @@ const issue = atom({ plugin: 'issue-panel', key: 'issue' } as const, null)
 const dev = atom({ plugin: 'issue-panel', key: 'dev' } as const, null)
 const note = atom({ plugin: 'issue-panel', key: 'note' } as const, '')
 const FIELDS = ['summary', 'issuetype', 'status', 'priority', 'fixVersions', 'description', 'comment', 'parent', 'issuelinks', 'customfield_10020']
+const OWN = 'plugin:issue-panel:' // this plugin's servers, as /mcp names them
 const needMcp = (reason: string) =>
-  `You need to connect the Atlassian MCP first: this plugin's own server (plugin:issue-panel:atlassian) is not connected (${reason}). Run /mcp, select it and authenticate.`
-let server: string | undefined // this plugin's own Atlassian MCP (manifest key "atlassian")
+  reason.startsWith('wrong-server')
+    ? `The Atlassian MCP bound to another plugin's server (${reason.slice(13)}), not ${OWN}issue-panel-atlassian. Authenticate that one in /mcp.`
+    : `You need to connect the Atlassian MCP first: ${OWN}issue-panel-atlassian is not connected (${reason}). Run /mcp, select it and authenticate.`
+let server: string | undefined // this plugin's own Atlassian MCP (manifest key "issue-panel-atlassian")
 let cloudId: string | undefined
 
 async function callText($: Api, tool: string, args: object) {
@@ -25,8 +28,9 @@ async function callText($: Api, tool: string, args: object) {
 
 async function connect($: Api) {
   if (server && cloudId) return
-  const c = await $.mcp.connect('atlassian')
+  const c = await $.mcp.connect('issue-panel-atlassian')
   if (!c.isConnected) throw new Error(`mcp:${c.reason}`)
+  if (!c.server.startsWith(OWN)) throw new Error(`mcp:wrong-server ${c.server}`) // never call another plugin's server
   server = c.server
   cloudId = JSON.parse(await callText($, 'getAccessibleAtlassianResources', {}))[0].id
 }
