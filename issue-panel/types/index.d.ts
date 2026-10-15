@@ -17,6 +17,6 @@ export type Issue = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'issue-panel': { issue: Issue | null; note: string; dev: DevItem[] | null }
+    'issue-panel': { issue: Issue | null; note: string; dev: { key: string; items: DevItem[] } | null }
   }
 }

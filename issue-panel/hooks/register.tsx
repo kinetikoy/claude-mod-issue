@@ -11,52 +11,37 @@ const issue = atom({ plugin: 'issue-panel', key: 'issue' } as const, null)
 const dev = atom({ plugin: 'issue-panel', key: 'dev' } as const, null)
 const note = atom({ plugin: 'issue-panel', key: 'note' } as const, '')
 const FIELDS = ['summary', 'issuetype', 'status', 'priority', 'fixVersions', 'description', 'comment', 'parent', 'issuelinks', 'customfield_10020']
-const OWN = 'plugin:issue-panel:' // this plugin's servers, as /mcp names them
-const needMcp = (reason: string) =>
-  reason.startsWith('wrong-server')
-    ? `The Atlassian MCP bound to another plugin's server (${reason.slice(13)}), not ${OWN}issue-panel-atlassian. Authenticate that one in /mcp.`
-    : `You need to connect the Atlassian MCP first: ${OWN}issue-panel-atlassian is not connected (${reason}). Run /mcp, select it and authenticate.`
-let server: string | undefined // this plugin's own Atlassian MCP (manifest key "issue-panel-atlassian")
-let cloudId: string | undefined
+const READ_TOOL = /^mcp__.*__(getJiraIssue|getTeamworkGraphContext)$/
 
-async function callText($: Api, tool: string, args: object) {
-  const r = await $.mcp.call(server!, tool, args)
-  const t = r.content.map((b: any) => b.text ?? '').join('')
-  if (r.isError) throw new Error(t.slice(0, 200))
-  return t
-}
-
-async function connect($: Api) {
-  if (server && cloudId) return
-  const c = await $.mcp.connect('issue-panel-atlassian')
-  if (!c.isConnected) throw new Error(`mcp:${c.reason}`)
-  if (!c.server.startsWith(OWN)) throw new Error(`mcp:wrong-server ${c.server}`) // never call another plugin's server
-  server = c.server
-  cloudId = JSON.parse(await callText($, 'getAccessibleAtlassianResources', {}))[0].id
-}
+// The panel never calls Atlassian itself (a plugin-initiated call has no request behind it, so permission
+// checks refuse it). Claude fetches through its own tool calls; the panel draws what those return.
+const instruction = (key: string) =>
+  `The issue-panel plugin is showing Jira issue ${key}. Fill it: call getJiraIssue (issueIdOrKey "${key}", fields ${JSON.stringify(FIELDS)}, responseContentFormat "markdown"; ` +
+  `get the cloudId from getAccessibleAtlassianResources, or use the site hostname) and getTeamworkGraphContext (objectType "JiraWorkItem", objectIdentifier "${key}", detailLevel "full"). ` +
+  'Use whichever Atlassian MCP has these tools. The panel draws the results, so do not repeat them.'
 
 async function show($: Api, key: string) {
-  const title = `Jira ${key}`
-  const opened = await $.ui.open({ id: PANE, title })
+  const opened = await $.ui.open({ id: PANE, title: `Jira ${key}` })
   if (!opened.isPlaced) $.ui.toast(`Jira panel not shown: ${opened.reason}. Try /issue ${key}`)
-  await update($, note, () => `Loading ${key}…`)
+  await update($, note, () => `Waiting for Claude to fetch ${key}…`)
+}
+
+/** Draw the result of Claude's own getJiraIssue / getTeamworkGraphContext call. */
+async function capture($: Api, tool: string, ran: { text?: string; isError?: true }) {
+  const text = ran.text ?? ''
   try {
-    await connect($)
-    const raw = await callText($, 'getJiraIssue', { cloudId, issueIdOrKey: key, fields: FIELDS })
-    const parsed = parseIssue(raw)
-    await update($, issue, () => parsed)
-    await update($, note, () => '')
-    await update($, dev, () => null)
-    try {
-      const d = parseDev(await callText($, 'getTeamworkGraphContext', { cloudId, objectType: 'JiraWorkItem', objectIdentifier: key, detailLevel: 'full', first: 50 }))
-      await update($, dev, () => d.items)
-    } catch {
-      // dev info is optional: leave the section empty
+    if (tool.endsWith('getJiraIssue')) {
+      if (ran.isError) throw new Error(text.slice(0, 200))
+      const parsed = parseIssue(text)
+      await update($, issue, () => parsed)
+      await update($, note, () => '')
+      await $.ui.open({ id: PANE, title: `Jira ${parsed.key}` })
+    } else {
+      const d = parseDev(text)
+      if (d.key) await update($, dev, () => ({ key: d.key!, items: d.items }))
     }
   } catch (err) {
-    const m = (err as Error).message
-    await update($, issue, () => null)
-    await update($, note, () => (m.startsWith('mcp:') ? needMcp(m.slice(4)) : `Could not load ${key}: ${m}`))
+    if (tool.endsWith('getJiraIssue')) await update($, note, () => `Could not load the issue: ${(err as Error).message}`)
   }
 }
 
@@ -86,10 +71,10 @@ const rule = (Box: any, Text: any) => (
 
 export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
-    // /issue is a plugin command file (commands/issue.md), so it lists in every host
+    // /issue is a plugin command file (commands/issue.md), so it lists in every host; the file tells Claude what to fetch
     const slashKey = e.command?.name.split(':').pop() === 'issue' ? keyIn(e.command.args) : undefined
     if (slashKey) {
-      void show($, slashKey)
+      await show($, slashKey)
       return next(e)
     }
     if (HIDE.test(e.text)) {
@@ -98,27 +83,39 @@ export const register: Register = on => {
     }
     const ask = parseShow(e.text)
     if (!ask) return next(e)
-    if ('key' in ask) void show($, ask.key)
+    let key: string | undefined
+    if ('key' in ask) key = ask.key
     else {
       const cur = await read($, issue)
-      const key = cur && (ask.rel === 'parent' ? cur.parent : dependantOf(cur))
-      if (key) void show($, key)
-      else await update($, note, () => `No ${ask.rel} issue for ${cur?.key ?? 'current issue'}`)
+      key = cur && (ask.rel === 'parent' ? cur.parent : dependantOf(cur))
+      if (!key) {
+        await update($, note, () => `No ${ask.rel} issue for ${cur?.key ?? 'current issue'}`)
+        return next(e)
+      }
     }
-    return next(e)
+    await show($, key)
+    return next({ ...e, context: [...(e.context ?? []), instruction(key)] })
   })
 
   on('tool.call', async ($, e, next) => {
-    const key = keyOfToolCall(e as any)
-    if (key) void show($, key)
-    return next(e)
+    const ran = await next(e)
+    if (ran.deny !== undefined) return ran
+    if (READ_TOOL.test(e.tool)) {
+      await capture($, e.tool, ran as any)
+      return ran
+    }
+    const key = e.tool.startsWith('mcp__') ? undefined : keyOfToolCall(e as any) // worktree / branch with an issue key
+    if (!key) return ran
+    await show($, key)
+    return { ...(ran as any), context: [...(ran.context ?? []), instruction(key)] }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const i = await read($, issue)
     const msg = await read($, note)
-    const devItems = await read($, dev)
+    const d = await read($, dev)
+    const devItems = d && d.key === i?.key ? d.items : null
 
     let main
     try {

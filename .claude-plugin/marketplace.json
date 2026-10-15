@@ -1,5 +1,6 @@
 {
   "name": "kinetik",
   "owner": { "name": "Jukka Raanamo" },
+  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
   "plugins": [{ "name": "issue-panel", "source": "./issue-panel", "description": "Side panel showing the Jira issue you are working on" }]
 }

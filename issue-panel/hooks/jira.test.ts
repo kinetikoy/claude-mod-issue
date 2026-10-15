@@ -12,7 +12,6 @@ test('parseShow', () => {
 test('keyOfToolCall', () => {
   expect(keyOfToolCall({ tool: 'Bash', command: 'git worktree add .worktrees/AB-7-x' })).toBe('AB-7')
   expect(keyOfToolCall({ tool: 'Bash', command: 'ls AB-7' })).toBeUndefined()
-  expect(keyOfToolCall({ tool: 'mcp__plugin_restoflow_atlassian__getJiraIssue', issueIdOrKey: 'XY-9' })).toBe('XY-9')
 })
 test('dependantOf', () => {
   expect(dependantOf({ links: [{ kind: 'relates to', key: 'A-1' }, { kind: 'is blocked by', key: 'A-2' }] } as any)).toBe('A-2')
@@ -24,12 +23,13 @@ test('parseIssue unwraps the MCP envelope', () => {
   expect(parseIssue(JSON.stringify({ key: 'A-2', fields: { parent: { key: 'A-1', fields: { summary: 'Epic' } } } })).parentTitle).toBe('Epic')
 })
 test('parseDev groups PRs and builds', () => {
-  const raw = JSON.stringify({ data: { data: { relationships: [
+  const raw = JSON.stringify({ data: { data: { object: { key: 'AA-1' }, relationships: [
     { relationshipName: 'x-has-pull-request', targetObjectType: 'ExternalPullRequest', targets: [{ title: 'Fix login', status: 'MERGED', url: 'u' }] },
     { relationshipName: 'jira-work-item-links-external-build', targetObjectType: 'ExternalBuild', targets: [{ name: 'ci #4', state: 'FAILED' }] },
     { relationshipName: 'atlassian_user_assigned_jira_work_item', targetObjectType: 'AtlassianUser', targets: [{}] },
   ] } } })
-  const { items } = parseDev(raw)
+  const { items, key } = parseDev(raw)
+  expect(key).toBe('AA-1')
   expect(items.map(i => `${i.kind}|${i.label}|${i.status}`)).toEqual(['Pull requests|Fix login|MERGED', 'Builds|ci #4|FAILED'])
 })
 test('control characters from Jira are stripped', () => {

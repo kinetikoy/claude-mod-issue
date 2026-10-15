@@ -20,7 +20,7 @@ export function parseShow(text: string): { key: string } | { rel: 'parent' | 'de
   return null
 }
 
-/** Issue key a tool call is about: worktree/branch creation or any Atlassian MCP call. */
+/** Issue key a tool call is about: worktree or branch creation. */
 export function keyOfToolCall(e: { tool: string } & Record<string, unknown>): string | undefined {
   const { tool } = e
   if (tool === 'Bash') {
@@ -28,7 +28,6 @@ export function keyOfToolCall(e: { tool: string } & Record<string, unknown>): st
     return /\bgit\s+(worktree\s+add|checkout\s+-b|switch\s+-c|branch)\b/.test(cmd) ? cmd.match(KEY)?.[0] : undefined
   }
   if (tool === 'EnterWorktree') return String(e.name ?? e.path ?? '').match(KEY)?.[0]
-  if (/^mcp__.*atlassian/i.test(tool)) return JSON.stringify(e).match(KEY)?.[0]
   return undefined
 }
 
@@ -88,8 +87,9 @@ export const DEV_ORDER = DEV_KINDS.map(([, k]) => k)
 const first = (o: any, keys: string[]) => keys.map(k => o?.[k]).find(v => typeof v === 'string' && v)
 
 /** Teamwork Graph relationships of a work item -> its GitHub-sourced dev items; unknown shapes are returned in `unknown`. */
-export function parseDev(raw: string): { items: DevItem[]; unknown: string[] } {
-  const rels = JSON.parse(raw)?.data?.data?.relationships ?? []
+export function parseDev(raw: string): { key?: string; items: DevItem[]; unknown: string[] } {
+  const data = JSON.parse(raw)?.data?.data
+  const rels = data?.relationships ?? []
   const items: DevItem[] = []
   const unknown: string[] = []
   for (const r of rels) {
@@ -101,7 +101,7 @@ export function parseDev(raw: string): { items: DevItem[]; unknown: string[] } {
       unknown.push(`${kind}: ${Object.keys(t).join(',')}`)
     }
   }
-  return { items: cleanDeep(items), unknown: [...new Set(unknown)].map(clean) }
+  return { key: data?.object?.key, items: cleanDeep(items), unknown: [...new Set(unknown)].map(clean) }
 }
 
 export const devColor = (s?: string) =>
