@@ -32,6 +32,12 @@ export function keyOfToolCall(e: { tool: string } & Record<string, unknown>): st
   return undefined
 }
 
+/** Jira text is untrusted: drop terminal control chars (ESC etc.), keep newlines and tabs. */
+export const clean = (s: string) => s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
+const cleanDeep = <T,>(v: T): T =>
+  typeof v === 'string' ? (clean(v) as T) : Array.isArray(v) ? (v.map(cleanDeep) as T)
+  : v && typeof v === 'object' ? (Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cleanDeep(x)])) as T) : v
+
 // ADF (or markdown string) -> plain text
 const text = (n: any): string =>
   n == null ? '' : typeof n === 'string' ? n.replace(/<custom[^>]*>(.*?)<\/custom>/gs, '$1')
@@ -39,7 +45,8 @@ const text = (n: any): string =>
   : n.type === 'text' ? n.text ?? ''
   : text(n.content) + (['paragraph', 'heading', 'listItem', 'codeBlock'].includes(n.type) ? '\n' : '')
 
-export function parseIssue(raw: string): Issue {
+export const parseIssue = (raw: string): Issue => cleanDeep(parseIssueRaw(raw))
+function parseIssueRaw(raw: string): Issue {
   const parsed = JSON.parse(raw)
   const j = parsed.issues?.nodes?.[0] ?? parsed // Atlassian MCP wraps the issue
   const f = j.fields ?? j
@@ -94,7 +101,7 @@ export function parseDev(raw: string): { items: DevItem[]; unknown: string[] } {
       unknown.push(`${kind}: ${Object.keys(t).join(',')}`)
     }
   }
-  return { items, unknown: [...new Set(unknown)] }
+  return { items: cleanDeep(items), unknown: [...new Set(unknown)].map(clean) }
 }
 
 export const devColor = (s?: string) =>
