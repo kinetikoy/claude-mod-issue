@@ -11,13 +11,13 @@ const issue = atom({ plugin: 'issue-panel', key: 'issue' } as const, null)
 const dev = atom({ plugin: 'issue-panel', key: 'dev' } as const, null)
 const note = atom({ plugin: 'issue-panel', key: 'note' } as const, '')
 const FIELDS = ['summary', 'issuetype', 'status', 'priority', 'fixVersions', 'description', 'comment', 'parent', 'issuelinks', 'customfield_10020']
-const READ_TOOL = /^mcp__.*__(getJiraIssue|getTeamworkGraphContext)$/
+const READ_TOOL = /^mcp__.*__(getJiraIssue|get(Teamwork)?GraphContext)$/ // tool names differ between Atlassian MCP versions
 
 // The panel never calls Atlassian itself (a plugin-initiated call has no request behind it, so permission
 // checks refuse it). Claude fetches through its own tool calls; the panel draws what those return.
 const instruction = (key: string) =>
-  `The issue-panel plugin is showing Jira issue ${key}. Fill it: call getJiraIssue (issueIdOrKey "${key}", fields ${JSON.stringify(FIELDS)}, responseContentFormat "markdown"; ` +
-  `get the cloudId from getAccessibleAtlassianResources, or use the site hostname) and getTeamworkGraphContext (objectType "JiraWorkItem", objectIdentifier "${key}", detailLevel "full"). ` +
+  `The issue-panel plugin is showing Jira issue ${key}. Fill it: call getJiraIssue (issueIdOrKey "${key}", with comments, sprint, parent and links: view "full" if it has a view option, else fields ${JSON.stringify(FIELDS)}; ` +
+  `get the cloudId from getAccessibleAtlassianResources, or use the site hostname) and getTeamworkGraphContext, or getGraphContext (objectType "JiraWorkItem", objectIdentifier "${key}", detailLevel "full"). ` +
   'Use whichever Atlassian MCP has these tools. The panel draws the results, so do not repeat them.'
 
 async function show($: Api, key: string) {

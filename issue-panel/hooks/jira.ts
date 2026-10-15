@@ -47,9 +47,9 @@ const text = (n: any): string =>
 export const parseIssue = (raw: string): Issue => cleanDeep(parseIssueRaw(raw))
 function parseIssueRaw(raw: string): Issue {
   const parsed = JSON.parse(raw)
-  const j = parsed.issues?.nodes?.[0] ?? parsed // Atlassian MCP wraps the issue
+  const j = parsed.data ?? parsed.issues?.nodes?.[0] ?? parsed // Atlassian MCP versions wrap the issue differently
   const f = j.fields ?? j
-  const sprint = [f.customfield_10020 ?? f.sprint].flat().filter(Boolean)
+  const sprint = [f.customfield_10020 ?? f.customFields?.Sprint?.value ?? f.sprint].flat().filter(Boolean)
   return {
     key: j.key,
     title: f.summary ?? '',

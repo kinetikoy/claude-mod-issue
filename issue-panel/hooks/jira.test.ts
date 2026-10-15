@@ -36,3 +36,7 @@ test('control characters from Jira are stripped', () => {
   const i = parseIssue(JSON.stringify({ key: 'A-1', fields: { summary: 'x\u001b[2Jy', description: 'a\nb\u0007' } }))
   expect([i.title, i.description]).toEqual(['x[2Jy', 'a\nb'])
 })
+test('parseIssue reads the {data} envelope and customFields sprint', () => {
+  const i = parseIssue(JSON.stringify({ data: { key: 'AA-2', fields: { summary: 'T', customFields: { Sprint: { value: [{ name: 'S9' }] } } } } }))
+  expect([i.key, i.title, i.sprint]).toEqual(['AA-2', 'T', 'S9'])
+})
